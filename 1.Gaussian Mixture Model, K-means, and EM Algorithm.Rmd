@@ -1,0 +1,243 @@
+---
+title: "Gaussian Mixture Model, K-means, and EM Algorithm"
+author: "Bonnie Yuan"
+date:
+output: 
+  pdf_document:
+    fig_width: 5
+    fig_height: 4
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+When working with large datasets, such as those used in Genome-Wide Association Studies (GWAS), researchers often analyze associations between genetic variants and diseases by clustering individuals based on genetic similarity.
+
+Two widely used algorithms for identifying clusters are K-means and the Expectation-Maximization (EM) algorithm. Each method serves a distinct purpose and has its own strengths. 
+
+K-means is a simple and efficient algorithm that partitions data into K clusters by minimizing within-cluster distance. In contrast, EM algorithm is a more flexible and robust method that handles latent (unobserved) variables that represent hidden structures or clusters in the data. It iterates between estimating these hidden cluster memberships (E-step) and updating the model parameters (M-step) to maximize the likelihood of the observed data.
+
+This document summarizes these two algorithms and provides accompanying R code examples.
+
+# Notation 
+Here is the notation used for the two algorithms:
+
+-   $X=\{x_1, x_2, \dots, x_n\}$ : Observed data points
+-   $K$: Number of clusters
+-   $\mu_k$: Mean of the k-th Gaussian component
+-   $\Sigma_k$: Covariance matrix of the k-th Gaussian component
+-   $\pi_k$: Mixing coefficient for the k-th component, where $\sum_{k=1}^{K} \pi_k = 1$
+-   $\gamma_{ik}$: Latent (unobserved) variable indicating the probability that data point $x_i$ belongs to cluster k
+
+
+# Gaussian Mixture Model (GMM)
+
+Gaussian Mixture Models (GMM) assume that data points are generated from a mixture of several Gaussian distributions, each characterized by its own mean, covariance, and mixing coefficient. The Gaussian mixture model can be written as:
+\begin{align}
+  p(x)=\sum_{k=1}^K\pi_k \phi(x; \mu_k,\Sigma_k)
+\end{align}
+
+where Gaussian density $\phi(x; \mu_k,\Sigma_k)$ is the kth component of the mixture with mean $\mu_k$, and covariance $\Sigma_k$, and $\pi_k$ is mixing coefficient, where $\sum_{k=1}^{K} \pi_k = 1$ and $0\le\pi_k\le1$
+
+Below is an example scatter plot showing Gaussian mixture model with two clusters (Fig.1).
+```{r ,echo=FALSE,message=FALSE,fig.cap="Gaussian mixture model",fig.align='center'}
+library(ggplot2)
+library(mclust)
+library(MASS)
+library(tidyverse)
+library(mixtools)
+set.seed(2024)
+n <- 500
+mu <- matrix(c(0,0,
+               1,3),byrow=T,ncol=2)
+covar <- array(rep(NA,2*2*2), c(2,2,2))  # 3D matrix
+covar[,,1] <- matrix(c(1, 0.5, 
+                       0.5,1), 
+                     nrow=2, 
+                     byrow=TRUE) # positive cov
+covar[,,2] <- matrix(c(1,-0.5,
+                       -0.5,1), 
+                     nrow=2, 
+                     byrow=TRUE) # negative cov
+
+# mixing coefficents
+pi_k      <- c(0.4,0.6)                           
+class <- sample(1:2, n, replace=TRUE, prob=pi_k)
+data<-matrix(rep(NA,n*2), ncol=2)
+for(i in 1:n){
+  data[i,]=mvrnorm(1,mu=mu[class[i],],Sigma=covar[,,class[i]])
+}
+
+data_clustered <- data.frame(data, cluster = factor(class))
+
+# scatter plot colored by cluster
+ggplot(data_clustered, aes(x = X1, y = X2, color = cluster)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(x = "X1", y = "X2") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1")
+```
+
+
+# K-Means
+
+The K-means algorithm partitions data into K clusters. To achieve this, the algorithm defines a new binary variable, $\gamma_{ik} \in \{0,1\}$, which indicates whether the data point $x_i$ is assigned to the kth cluster. The goal of the algorithm is to find a set of centroids, $\{\mu_k\}$ such that the distance between the data points and their closest centroids is minimized. This is done by minimizing the following objective function, which is the sum of squared Euclidean distances:
+\begin{align}
+  J=\sum_{i=1}^n \sum_{k=1}^K \gamma_{ik} ||x_i-\mu_k||^2
+\end{align}
+
+Steps of the K-means Algorithm:
+
+-   Initialize $\mu_k$, usually by randomly selecting K data points.
+-   Assign each data point to the nearest centroid by minimizing the distance: $\gamma_{ik}=argmin_{\gamma_{ik}J}$. In this step, $\mu_k$ are kept fixed, and $\gamma_{ik}=1$ if the objective function is minimized. 
+-   Update $\mu_k = argmin_{\mu_{ik}}J$. In this step, the cluster assignments $\gamma_{ik}$ are kept fixed. And the $\mu_k$ is calculated as:
+\begin{align}
+  \hat{\mu_k}=\frac{\sum_{i=1}^n \gamma_{ik}x_i}{\sum_{i=1}^n \gamma_{ik}}
+\end{align}
+
+These steps are repeated iteratively until the algorithm converges.
+
+Here is an example implementation of the K-means algorithm.
+
+```{r}
+k_means <- function(data,K, max_iter=100,tol = 1e-6) {
+  n <- nrow(data)  # Number of data points
+  d <- ncol(data)  # Dimension of the data
+  # initialization mu_k and gamma_ik
+  mu_k<-data[sample(1:n, K),]
+  gamma_ik <- rep(0, n)
+  old_muk <- mu_k
+  for (iter in 1:max_iter) {
+    # first update gamma_ik
+    for( i in 1:n){
+      # objective function
+      obj <- apply(mu_k, 1, function(mu_k) sum((data[i, ] - mu_k)^2))
+      gamma_ik[i] <- which.min(obj)
+    }
+    # update mu_k: calculate mean for each cluster 
+    for( k in 1:K){
+      subpoints_k=data[gamma_ik==k,]
+      if (nrow(subpoints_k) > 0) {
+       mu_k[k,]<-colMeans(subpoints_k)
+      }
+    }
+    # Check for convergence
+    if (sum((mu_k - old_muk)^2) < tol) {
+      cat("Converged after", iter, "iterations.\n")
+      break
+    }
+    old_muk <- mu_k
+  }
+  return(list(mu_k = mu_k, gamma_ik = gamma_ik))
+}
+```
+
+
+
+# EM Algorithm
+
+Below is an example R code for implementing EM algorithm.
+```{r, include=FALSE}
+EM<-function(data,K,max_iter=100,tol = 1e-6){
+  n = nrow(data)
+  d = ncol(data)
+  # initialization
+  pi_k = rep(1/K, K)
+  # initialize parameters using K-means
+  kmeans_result <- k_means(data, K)
+  mu_k <- kmeans_result$mu_k 
+  Sigmas <- array(rep(NA,2*2*d), c(2,2,d))
+  
+  for(k in 1:K){
+    Sigmas[,,k] <- diag(d)
+  }
+  gamma = matrix(0,nrow=n,ncol=K)
+  gamma_old = gamma
+
+ for (i in 1:max_iter) {
+    # E-step
+    for(k in 1:K){
+     gamma[,k] <- apply(data, 1, function(xi) {pi_k[k] * dmvnorm(xi,mu_k[k,], Sigmas[,,k])})
+    }
+    gamma<-gamma/rowSums(gamma)
+    if (sum(abs(gamma - gamma_old)) < tol){
+      break      
+    }
+
+    gamma_old <- gamma
+    
+    # M-step
+    n_k <- colSums(gamma) 
+    # Update the mixing coefficients
+    pi_k <- n_k / n
+    # Update the means
+    for (k in 1:K) {
+      mu_k[k] <- sum(gamma[, k] * data) / n_k[k]
+    
+    Sigmas[,,k] <- 0
+    for (i in 1:n) {
+      diff <- matrix(data[i, ] - mu_k[k, ], nrow = 1)
+      Sigmas[,,k] <- Sigmas[,,k] + gamma[i, k] * t(diff) %*% diff
+    }
+    Sigmas[,,k] <- Sigmas[,,k] / n_k[k]
+    }
+
+ }
+  # Return the estimated parameters
+  return(list(pi_k = pi_k, mu_k = mu_k, gamma_k=gamma))
+}
+
+```
+
+
+# Simulation 
+
+Now let's compare the two algorithms. We first similate two clusters with overlap data points that we showed in Figure 1. 
+
+```{r,include=FALSE}
+set.seed(2024)
+n <- 500
+mu <- matrix(c(0,0,
+               1,3),byrow=T,ncol=2)
+covar <- array(rep(NA,2*2*2), c(2,2,2))  # 3D matrix
+covar[,,1] <- matrix(c(1, 0.5, 
+                       0.5,1), 
+                     nrow=2, 
+                     byrow=TRUE) # positive cov
+covar[,,2] <- matrix(c(1,-0.5,
+                       -0.5,1), 
+                     nrow=2, 
+                     byrow=TRUE) # negative cov
+
+# mixing coefficents
+pi_k      <- c(0.4,0.6)                           
+class <- sample(1:2, n, replace=TRUE, prob=pi_k)
+data<-matrix(rep(NA,n*2), ncol=2)
+for(i in 1:n){
+  data[i,]=mvrnorm(1,mu=mu[class[i],],Sigma=covar[,,class[i]])
+}
+```
+
+
+
+Now let's compare the performance of k-means and EM
+
+Here we can see the results from EM is pretty similar to the true means. 
+```{r}
+result_kmeans = k_means(data,K=2)  
+print(result_kmeans$mu_k)   # means
+
+result_em = EM(data,K=2)  
+print(result_em$mu_k)   
+```
+
+# Conclusion
+K-means assumes clusters are spherical and equally sized, and it works well when the data is relatively simple and separable. However, EM is suited for more complex tasks which identifies sub-populations in heterogeneous datasets, where overlapping or irregularly shaped clusters are common.
+
+
+
