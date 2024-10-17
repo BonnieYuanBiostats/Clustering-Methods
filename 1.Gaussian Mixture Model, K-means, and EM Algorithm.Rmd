@@ -140,39 +140,43 @@ k_means <- function(data,K, max_iter=100,tol = 1e-6) {
 
 # EM Algorithm
 ## Maximize Likelihood Estimate (MLE)
-Recall the Gaussian Mixture model is in the form (1), The log-likelihood for Gaussian mixtures becomes:
+Recall that the GMM assumes that data is generated from a mixture of several Gaussian distributions. The log-likelihood for Gaussian mixtures is given by:
+
 \begin{align*}
   l(\mu_k,\Sigma_k)=\sum_{i=1}^n log \sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)
 \end{align*}
 
-If we estimate the parameters$\theta=\{\pi_k, \mu_k, \Sigma_k\}$, we take derivative w.r.t each parameter, for example, for $\mu_k$, it becomes:
+To estimate the parameters $\theta=\{\pi_k, \mu_k, \Sigma_k\}$, we can take derivative w.r.t each parameter, for example, for $\mu_k$, it becomes:
 \begin{align*}
-\frac{d}{d \mu_k}l(\mu_k,\Sigma_k)=\sum_{i=1}^n\frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}(\Sigma_k(x_i-\mu_k))
+\frac{d}{d \mu_k}l(\mu_k,\Sigma_k)=\sum_{i=1}^n\frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}(\Sigma_k^{-1}(x_i-\mu_k))
 \end{align*}
 
-Here we define the responsibility as 
+Here we define the responsibility $\gamma_{ik}$ which represents the probability that data point $x_i$ belongs to the k-th cluster:
+
 \begin{align*}
 \gamma_{ik}=\frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}
 \end{align*}
-Indicating the probability that data point $x_i$ belongs to kth cluster. Therefore, set the derivative to 0 and we obtain the MLE of $\mu_k$, which is 
+
+By setting the derivative to 0 and solve for $\mu_k$, we can obtain the MLE for $\mu_k$:
 \begin{align*}
   \hat{\mu_k} &=\frac{\sum_{i=1}^n \gamma_{ik} x_i}{\sum_{i=1}^n \gamma_{ik}}\\
   &=\frac{1}{N_k}\sum_{i=1}^n \gamma_{ik} x_i
 \end{align*}
-where $N_k=\sum_{i=1}^n \gamma_{ik}$
-Notice this gives the same formula as k-means, except the fact that here the  $\gamma_{ik}$ is probability between 0 and 1, while in k-means is a binary variable. 
+where $N_k=\sum_{i=1}^n \gamma_{ik}$, the effective number of points assigned to the k-th cluster.
+ This formula closely resembles the update step in K-means clustering, except that in K-means $\gamma_{ik}$ is binary, whereas in here, it is a probability between 0 and 1.
 
-Similarly the MLE of $\Sigma_k$ is:
+Similarly the MLE for $\Sigma_k$ is:
 \begin{align*}
   \hat{\Sigma_k} &= \frac{1}{N_k}\sum_{i=1}^n \gamma_{ik} (x_i-\mu_k)(x_i-\mu_k)^T
 \end{align*}
 
-Finally, we update the mixing coefficient $\pi_k$. Recall we have the constrain that $\sum_k \pi_k=1$. The Lagrange multiplier can be used to maximizing $\pi_k$
+Finally, we update the mixing coefficient $\pi_k$. Using a Lagrange multiplier to enforce the constraint $\sum_k \pi_k=1$ we obtain:
+
 \begin{align*}
 L(\lambda)=log\text{ }p(x|\theta)+\lambda (\sum_k \pi_k-1)
 \end{align*}
 
-taking deravative of $L(\lambda)$ w.r.t $\pi_k$ which gives
+Then we take deravative of $L(\lambda)$ w.r.t $\pi_k$ which gives
 \begin{align*}
 \sum_{i=1}^n\frac{\phi(x_i;\mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x_i;\mu_k,\Sigma_k)}+\lambda=0
 \end{align*}
@@ -186,22 +190,45 @@ this gives
 
 ## Alternative view of EM
 
-Another way of viewing EM algorithm is through the concept of latent variable and complete likelihood. When we model the data as GMM, we only observe the X but not observing which cluster for each data point belongs to. We then define latent variable $Z_k=\mathbf I\{\gamma_{ik}=1\}$, which gives $Z_k=1$ if data point $x_i$ belongs kth cluster.
+Another way to understand the EM algorithm is through the concept of latent variables and the complete-data log-likelihood. In a GMM, the data X , but the cluster membership of each point is unknown. We introduce a latent variable $Z_k=\mathbf I\{\gamma_{ik}=1\}$, which indicates whether the data point $x_i$ belongs kth cluster.
 
-So the marginal log-likelihood is:
+The marginal log-likelihood can then be written as:
 \begin{align*}
 \text{log }p(x;\theta)&=\text{log }\sum_z p(x,z;\theta)\\
 &=\text{log }\sum_{q(z)} \frac{ p(x,z;\theta)}{q(z)}(z)\\
-&=\text{log }E_{q(z)}[\frac{ p(x,z;\theta)}{q(z)}]\\
-&\ge E_{q(z)}[\text{log } \frac{ p(x,z;\theta)}{q(z)}]
+&=\text{log }E_{q(z)}[\frac{ p(x,z;\theta)}{q(z)}]
 \end{align*}
-Here are some explaination of the  
-where q(z) is some distribution for z, and the inequality is based on Jensen's inequality for concave function(log). H(q(z)) is the entropy of q(z), quantifies the average level of uncertainty, defined as $H(q(z))=\sum_{q(z)}q(z)\text{log }q(z)$. And lastly 
+Applying Jensen's inequality and introducing a distribution q(z), we obtain a lower bound on the log-likelihood known as the Evidence Lower Bound (ELBO):
+\begin{align*}
+\text{log }p(x;\theta)&\ge E_{q(z)}[\text{log } \frac{ p(x,z;\theta)}{q(z)}]\\
+&=E_{q(z)}[\text{log } p(x,z;\theta)] - E_{q(z)}[\text{log }q(z)]\\
+&=Q(\theta) + H(q(z))
+\end{align*}
 
+Here, H(q(z)) is the entropy of q(z),  which measures the uncertainty in q(z), and $Q(\theta)$ is the expected complete-data log-likelihood under the distribution q(z).
 
-Here is a general receipt of EM algorithm:
+-   We further define $E_{q(z)}[\text{log } \frac{ p(x,z;\theta)}{q(z)}]=ELBO(\theta,q)$, Evidence Lower Bound based on the evidence of observed data. 
+
+Further investigate $ELBO(\theta,q)$ we'll have 
+
+\begin{align*}
+ELBO(\theta,q)&=E_{q(z)}[\text{log } \frac{ p(x,z;\theta)}{q(z)}]\\
+&=\sum_{q(z)} \text{log } \frac{ p(x,z;\theta)}{q(z)}\\
+&=\sum_{q(z)} \text{log } \frac{ p(x,z;\theta)}{p(z|x;\theta)} \frac{ p(z|x;\theta)}{q(z)}\\
+&=\sum_{q(z)} \text{log } \frac{ p(z|x;\theta)p(x;\theta)}{p(z|x;\theta)} \frac{ p(z|x;\theta)}{q(z)}\\
+&=\sum_{q(z)} \text{log }  p(x;\theta)\frac{ p(z|x;\theta)}{q(z)}\\
+&=E_{q(z)}[\text{log }  p(x;\theta)]-E_{q(z)}[\text{log } \frac{ p(z|x;\theta)}{q(z)}]\\
+&=\text{log }  p(x;\theta) -E_{q(z)}[\text{log } \frac{q(z)}{ p(z|x;\theta)}]
+\end{align*}
+
+We can observe that the ELBO is equal to the marginal log-likelihood minus the expected difference between the prior q(z) and the posterior distribution $p(z|x;\theta)$,which is the Kullback-Leibler (KL) divergence.This KL divergence measures how close the two distrisbution. Therefore, to optimize the ELBO effectively, the goal is to set q(z) as close as possible to the posterior $p(z|x;\theta)=\frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}$.
+
+The general steps of the EM algorithm are:
+
 -   Initialize $\theta=\theta^{(0)}$
--   (E-step) At step t, calculate E[q(z|x,$\theta^{(t)}$)]/responsibility and compute $Q(\theta^{(t)})=E_{q(z)}[log\text{ }p(x,z|\theta)]$
+
+-   (E-step) At step t, calculate E[q(z|x,$\theta^{(t)}$)]/responsibility and compute expected value of complete log-likelihood over q(z) $Q(\theta^{(t)})=E_{q(z)}[log\text{ }p(x,z|\theta)]$
+
 -   (M-step) Maximize $\theta^{(t+1)}=argmax_\theta Q(\theta)$
 
 
@@ -300,8 +327,14 @@ result_em = EM(data,K=2)
 print(result_em$mu_k)   
 ```
 
-# Conclusion
-K-means assumes clusters are spherical and equally sized, and it works well when the data is relatively simple and separable. However, EM is suited for more complex tasks which identifies sub-populations in heterogeneous datasets, where overlapping or irregularly shaped clusters are common.
+# Referneces
+
+1. http://www.di.fc.ul.pt/~jpn/r/PRML/chapter9.html#k-means-clustering-section-9.1
+
+2. Bishop, Christopher M. ( 2006). Pattern recognition and machine learning. New York :Springer
+
+3. https://teng-gao.github.io/blog/2022/ems/
+
 
 
 
