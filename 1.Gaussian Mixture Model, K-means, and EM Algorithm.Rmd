@@ -122,7 +122,7 @@ k_means <- function(data,K, max_iter=100,tol = 1e-6) {
     for( k in 1:K){
       subpoints_k=data[gamma_ik==k,]
       if (nrow(subpoints_k) > 0) {
-       mu_k[k,]<-colMeans(subpoints_k)
+       mu_k[k,]<-colSums(subpoints_k) / nrow(subpoints_k)
       }
     }
     # Check for convergence
@@ -259,7 +259,6 @@ EM<-function(data,K,max_iter=100,tol = 1e-6){
     if (sum(abs(gamma - gamma_old)) < tol){
       break      
     }
-
     gamma_old <- gamma
     
     # M-step
@@ -268,19 +267,19 @@ EM<-function(data,K,max_iter=100,tol = 1e-6){
     pi_k <- n_k / n
     # Update the means
     for (k in 1:K) {
-      mu_k[k] <- sum(gamma[, k] * data) / n_k[k]
-    
+      mu_k[k,] <- colSums(gamma[, k] * data) / n_k[k]
+      
     Sigmas[,,k] <- 0
     for (i in 1:n) {
       diff <- matrix(data[i, ] - mu_k[k, ], nrow = 1)
-      Sigmas[,,k] <- Sigmas[,,k] + gamma[i, k] * t(diff) %*% diff
+      Sigmas[,,k] <- Sigmas[,,k] + gamma[i, k] * t(diff) %*% diff # summing over i
     }
     Sigmas[,,k] <- Sigmas[,,k] / n_k[k]
     }
 
  }
   # Return the estimated parameters
-  return(list(pi_k = pi_k, mu_k = mu_k, gamma_k=gamma))
+  return(list(pi_k = pi_k,gamma_k=gamma, mu_k = mu_k,Sigmas=Sigmas ))
 }
 
 ```
@@ -288,9 +287,28 @@ EM<-function(data,K,max_iter=100,tol = 1e-6){
 
 # Simulation 
 
-Now let's compare the two algorithms. We first similate two clusters with overlap data points that we showed in Figure 1. 
+# Simulation # 1: 
+Now let's compare the two algorithms using the data from Figure 1. We simulate 400 data points from two Gaussian distributions with the following characteristics:
 
-```{r,include=FALSE}
+-  **Mixing coefficients:** $\pi_1=0.4$ and $\pi_1=0.6$. 
+-  **Means:** $mu_1=(0,0)$, and $mu_1=(1,3)$
+-  **Covariance matrices:** The covariance matrix for the two clusters are:
+\begin{equation*}
+    \Sigma_1=
+    \begin{pmatrix} 
+    1 & 0.5 \\
+    0.5 & 1 
+    \end{pmatrix}
+\end{equation*}
+\begin{equation*}
+    \Sigma_2= 
+    \begin{pmatrix} 
+    1 & -0.5 \\
+    -0.5 & 1 
+    \end{pmatrix}
+\end{equation*}
+
+```{r}
 set.seed(2024)
 n <- 500
 mu <- matrix(c(0,0,
@@ -305,27 +323,81 @@ covar[,,2] <- matrix(c(1,-0.5,
                      nrow=2, 
                      byrow=TRUE) # negative cov
 
-# mixing coefficents
+# mixing coefficients
 pi_k      <- c(0.4,0.6)                           
 class <- sample(1:2, n, replace=TRUE, prob=pi_k)
 data<-matrix(rep(NA,n*2), ncol=2)
 for(i in 1:n){
   data[i,]=mvrnorm(1,mu=mu[class[i],],Sigma=covar[,,class[i]])
 }
-```
 
+head(data)
+```
 
 
 Now let's compare the performance of k-means and EM
 
-Here we can see the results from EM is pretty similar to the true means. 
+In this simulation, we can see that the results from EM are quite similar to the true means. EM slightly outperforms K-means in estimating $\mu_1$.
+
 ```{r}
 result_kmeans = k_means(data,K=2)  
 print(result_kmeans$mu_k)   # means
 
 result_em = EM(data,K=2)  
 print(result_em$mu_k)   
+print(result_em$pi_k) # mixing coefficients
 ```
+
+## Simulation # 2 
+
+How about two clusters that are not overlap?
+
+```{r}
+set.seed(2024)
+n <- 500
+mu <- matrix(c(0,0,
+               5,6),byrow=T,ncol=2)
+covar <- array(rep(NA,2*2*2), c(2,2,2))  # 3D matrix
+covar[,,1] <- matrix(c(1, 0.5, 
+                       0.5,1), 
+                     nrow=2, 
+                     byrow=TRUE) # positive cov
+covar[,,2] <- matrix(c(1,-0.5,
+                       -0.5,1), 
+                     nrow=2, 
+                     byrow=TRUE) # negative cov
+
+# mixing coefficients
+pi_k      <- c(0.4,0.6)                           
+class <- sample(1:2, n, replace=TRUE, prob=pi_k)
+data<-matrix(rep(NA,n*2), ncol=2)
+for(i in 1:n){
+  data[i,]=mvrnorm(1,mu=mu[class[i],],Sigma=covar[,,class[i]])
+}
+
+data_clustered <- data.frame(data, cluster = factor(class))
+
+# scatter plot colored by cluster
+ggplot(data_clustered, aes(x = X1, y = X2, color = cluster)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(x = "X1", y = "X2") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1")
+```
+
+In cases where the clusters are well-separated and spherical, both K-means and the EM algorithm are essentially the same.
+
+```{r}
+result_kmeans = k_means(data,K=2)  
+print(result_kmeans$mu_k)   # means
+
+result_em = EM(data,K=2)  
+print(result_em$mu_k)   
+print(result_em$pi_k) # mixing coefficients
+```
+
+
+
 
 # Referneces
 
