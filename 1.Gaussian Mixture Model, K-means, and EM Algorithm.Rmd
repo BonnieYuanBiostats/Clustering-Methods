@@ -85,7 +85,6 @@ ggplot(data_clustered, aes(x = X1, y = X2, color = cluster)) +
 
 
 # K-Means
-
 The K-means algorithm partitions data into K clusters. To achieve this, the algorithm defines a new binary variable, $\gamma_{ik} \in \{0,1\}$, which indicates whether the data point $x_i$ is assigned to the kth cluster. The goal of the algorithm is to find a set of centroids, $\{\mu_k\}$ such that the distance between the data points and their closest centroids is minimized. This is done by minimizing the following objective function, which is the sum of squared Euclidean distances:
 \begin{align}
   J=\sum_{i=1}^n \sum_{k=1}^K \gamma_{ik} ||x_i-\mu_k||^2
@@ -140,6 +139,71 @@ k_means <- function(data,K, max_iter=100,tol = 1e-6) {
 
 
 # EM Algorithm
+## Maximize Likelihood Estimate (MLE)
+Recall the Gaussian Mixture model is in the form (1), The log-likelihood for Gaussian mixtures becomes:
+\begin{align*}
+  l(\mu_k,\Sigma_k)=\sum_{i=1}^n log \sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)
+\end{align*}
+
+If we estimate the parameters$\theta=\{\pi_k, \mu_k, \Sigma_k\}$, we take derivative w.r.t each parameter, for example, for $\mu_k$, it becomes:
+\begin{align*}
+\frac{d}{d \mu_k}l(\mu_k,\Sigma_k)=\sum_{i=1}^n\frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}(\Sigma_k(x_i-\mu_k))
+\end{align*}
+
+Here we define the responsibility as 
+\begin{align*}
+\gamma_{ik}=\frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}
+\end{align*}
+Indicating the probability that data point $x_i$ belongs to kth cluster. Therefore, set the derivative to 0 and we obtain the MLE of $\mu_k$, which is 
+\begin{align*}
+  \hat{\mu_k} &=\frac{\sum_{i=1}^n \gamma_{ik} x_i}{\sum_{i=1}^n \gamma_{ik}}\\
+  &=\frac{1}{N_k}\sum_{i=1}^n \gamma_{ik} x_i
+\end{align*}
+where $N_k=\sum_{i=1}^n \gamma_{ik}$
+Notice this gives the same formula as k-means, except the fact that here the  $\gamma_{ik}$ is probability between 0 and 1, while in k-means is a binary variable. 
+
+Similarly the MLE of $\Sigma_k$ is:
+\begin{align*}
+  \hat{\Sigma_k} &= \frac{1}{N_k}\sum_{i=1}^n \gamma_{ik} (x_i-\mu_k)(x_i-\mu_k)^T
+\end{align*}
+
+Finally, we update the mixing coefficient $\pi_k$. Recall we have the constrain that $\sum_k \pi_k=1$. The Lagrange multiplier can be used to maximizing $\pi_k$
+\begin{align*}
+L(\lambda)=log\text{ }p(x|\theta)+\lambda (\sum_k \pi_k-1)
+\end{align*}
+
+taking deravative of $L(\lambda)$ w.r.t $\pi_k$ which gives
+\begin{align*}
+\sum_{i=1}^n\frac{\phi(x_i;\mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x_i;\mu_k,\Sigma_k)}+\lambda=0
+\end{align*}
+
+And we sum over k, this gives $\lambda=-N$, and recall $N_k=\sum_{i=1}^n \gamma_{ik}=\sum_{i=1}^n \frac{\pi_k \phi(x; \mu_k,\Sigma_k)}{\sum_{k=1}^K \pi_k \phi(x; \mu_k,\Sigma_k)}$. 
+
+this gives
+\begin{align*}
+\hat \pi_k=\frac{N_k}{N}
+\end{align*}
+
+## Alternative view of EM
+
+Another way of viewing EM algorithm is through the concept of latent variable and complete likelihood. When we model the data as GMM, we only observe the X but not observing which cluster for each data point belongs to. We then define latent variable $Z_k=\mathbf I\{\gamma_{ik}=1\}$, which gives $Z_k=1$ if data point $x_i$ belongs kth cluster.
+
+So the marginal log-likelihood is:
+\begin{align*}
+\text{log }p(x;\theta)&=\text{log }\sum_z p(x,z;\theta)\\
+&=\text{log }\sum_{q(z)} \frac{ p(x,z;\theta)}{q(z)}(z)\\
+&=\text{log }E_{q(z)}[\frac{ p(x,z;\theta)}{q(z)}]\\
+&\ge E_{q(z)}[\text{log } \frac{ p(x,z;\theta)}{q(z)}]
+\end{align*}
+Here are some explaination of the  
+where q(z) is some distribution for z, and the inequality is based on Jensen's inequality for concave function(log). H(q(z)) is the entropy of q(z), quantifies the average level of uncertainty, defined as $H(q(z))=\sum_{q(z)}q(z)\text{log }q(z)$. And lastly 
+
+
+Here is a general receipt of EM algorithm:
+-   Initialize $\theta=\theta^{(0)}$
+-   (E-step) At step t, calculate E[q(z|x,$\theta^{(t)}$)]/responsibility and compute $Q(\theta^{(t)})=E_{q(z)}[log\text{ }p(x,z|\theta)]$
+-   (M-step) Maximize $\theta^{(t+1)}=argmax_\theta Q(\theta)$
+
 
 Below is an example R code for implementing EM algorithm.
 ```{r, include=FALSE}
